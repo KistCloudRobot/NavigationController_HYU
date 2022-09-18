@@ -1,2 +1,2 @@
 # NavigationController_HYU
-Woonsang Kang,
+Woonsang Kang, monni1729@hanyang.ac.kr
