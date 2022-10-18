@@ -87,7 +87,7 @@ class NavigationController(ArbiAgent):
                 return str(result.get_expression(1).as_value().int_value())
 
     def request_single_path(self, sv, ev):
-        request_msg = "(MultiRobotPath(path\"\"" + sv + " " + ev + "))"
+        request_msg = "(MultiRobotPath(path\"single_path_check\"" + sv + " " + ev + "))"
         response = self.request("agent://www.arbi.com/MultiAgentPathFinder", request_msg)
         response_gl = generalized_list_factory.new_gl_from_gl_string(response)
         temp_gl = response_gl.get_expression(0).as_generalized_list()
@@ -95,7 +95,6 @@ class NavigationController(ArbiAgent):
         return path.split(' ')[1:]
 
     def request_to_mapf(self, paths):
-        print('1', paths)
         request_msg = str()
         for idx, r in enumerate(self.robot_list):
             request_msg += "(RobotPath\"" + r + "\"" + paths[idx] + ")"
@@ -104,14 +103,16 @@ class NavigationController(ArbiAgent):
         response = self.request("agent://www.arbi.com/MultiAgentPathFinder", request_msg)
         response_gl = generalized_list_factory.new_gl_from_gl_string(response)
         multipath = {}
+        print('response from mapf+++')
+        print(response_gl)
         for idx, r in enumerate(self.robot_list):
             temp_gl = response_gl.get_expression(idx).as_generalized_list()
             path = str(temp_gl.get_expression(1))[:-1]
             multipath[r] = path.split(' ')[2:]
+
         self.reduce_t_node(multipath)
 
     def reduce_t_node(self, multipath):
-        print('2', multipath)
         t_node = {}
         for k, v in multipath.items():
             if v:
@@ -151,14 +152,14 @@ class NavigationController(ArbiAgent):
                     self.t_node[end_vertex] = [robotID]
 
             else:
-                self.col_flag = False
+                self.col_flag = True
+                '''
                 single_path = self.request_single_path(start_vertex, end_vertex)
-
                 for p in single_path[1:]:
                     if p in self.t_node.keys() and self.t_node[p]:
                         self.col_flag = True
                         break
-
+                '''
                 if self.col_flag:
                     self.global_waiting = True
                     for s in self.robot_state.values():
@@ -209,11 +210,6 @@ class NavigationController(ArbiAgent):
         self.robot_state[robot_id] = 'done'
         action_result = "(ActionResult\"" + self.actionID[robot_id] + "\"\"" + result + "\")"
 
-        for k, v in self.t_node.items():
-            print(k, v)
-        for k, v in self.multipath.items():
-            print(k, v)
-
         if move_type == 'Move':
             self.t_node[pre_position].pop(0)
             if not self.t_node[pre_position]:
@@ -228,9 +224,14 @@ class NavigationController(ArbiAgent):
                 self.t_node[pre_position].pop(0)
                 if not self.t_node[pre_position]:
                     del self.t_node[pre_position]
-            print('### send exit of enter ###')
-            print(action_result)
             self.send("agent://www.arbi.com/TaskManager", action_result)
+            print('\nif enter or exit')
+            print(action_result)
+
+        for k, v in self.t_node.items():
+            print(k, v)
+        for k, v in self.multipath.items():
+            print(k, v)
 
     def on_request(self, sender: str, request: str) -> str:
         print("\nON REQUEST")
@@ -241,6 +242,7 @@ class NavigationController(ArbiAgent):
 
     def navigate_single_step(self, robot_id, end_vertex):
         path = "\"(Path " + str(end_vertex) + "))"
+        print('single step query', self.robot_position[robot_id], path)
         move_msg = "(RequestMove \"" + robot_id + "+Move_" + end_vertex + "\"\"" + robot_id + path
         self.request("agent://www.arbi.com/TaskManager", move_msg)
 
@@ -248,7 +250,6 @@ class NavigationController(ArbiAgent):
         robot_id, move_type, vertex, direction = self.msg_parser(gl_msg, [1, 2, 3, 4])
         tail = "\"\"" + robot_id + "\"" + vertex + "\"" + direction + "\")"
         request_msg = "(Request" + move_type + " \"" + robot_id + action + tail
-        print('***', request_msg)
         self.request("agent://www.arbi.com/TaskManager", request_msg)
         self.actionID[robot_id] = gl_msg.get_expression(0).as_value().string_value()
 
@@ -260,6 +261,5 @@ if __name__ == '__main__':
         # ip = "tcp://172.16.165.141:61316"
         ip = "tcp://127.0.0.1:61316"
     nc = NavigationController(ip)
-    nc.request_single_path('158', '102')
     while True:
         pass
