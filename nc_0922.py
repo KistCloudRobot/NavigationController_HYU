@@ -1,7 +1,7 @@
 import sys, time
 from copy import deepcopy as dc
 
-sys.path.append("/home/lab2/python_project/PythonARBIFramework")
+sys.path.append("/home/uosai/pythonProject/PythonARBIFramework")
 # currentFilePath = pathlib.Path(__file__).parent.resolve()
 # sys.path.append(str(currentFilePath) + "/PythonARBIFramework")
 
@@ -11,6 +11,9 @@ from arbi_agent.ltm.data_source import DataSource
 from arbi_agent.model import generalized_list_factory
 from arbi_agent.configuration import BrokerType
 
+agentName = "agent://www.arbi.com/NavigationController"
+#brokerURL = "tcp://127.0.0.1:61316"
+brokerURL = "tcp://172.16.165.141:61316"
 
 class NCDataSource(DataSource):
     def __init__(self, nc):
@@ -24,7 +27,7 @@ class NavigationController(ArbiAgent):
     def __init__(self, brokerURL):
         super().__init__()
         self.ds = NCDataSource(self)
-        arbi_agent_executor.execute(broker_url=brokerURL, agent_name="agent://www.arbi.com/NavigationController",
+        arbi_agent_executor.execute(broker_url=brokerURL, agent_name=agentName,
                                     agent=self, broker_type=BrokerType.ZERO_MQ, daemon=False)
         self.request_queue = []
         self.actionID = {}
@@ -87,7 +90,7 @@ class NavigationController(ArbiAgent):
                 return str(result.get_expression(1).as_value().int_value())
 
     def request_single_path(self, sv, ev):
-        request_msg = "(MultiRobotPath(path\"\"" + sv + " " + ev + "))"
+        request_msg = "(MultiRobotPath(path \"singlepath\" " + sv + " " + ev + "))"
         response = self.request("agent://www.arbi.com/MultiAgentPathFinder", request_msg)
         response_gl = generalized_list_factory.new_gl_from_gl_string(response)
         temp_gl = response_gl.get_expression(0).as_generalized_list()
@@ -135,6 +138,7 @@ class NavigationController(ArbiAgent):
 
     def run(self):
         if self.request_queue:
+            print("request queue start")
             navigateMsg = dc(self.request_queue[0])
             glName = navigateMsg.get_name()
             actionID, robotID, start_vertex, end_vertex = self.msg_parser(navigateMsg, [0, 1, 2, 3])
@@ -161,6 +165,7 @@ class NavigationController(ArbiAgent):
 
                 if self.col_flag:
                     self.global_waiting = True
+                    print(self.robot_state)
                     for s in self.robot_state.values():
                         if s == 'moving':
                             break
@@ -187,13 +192,23 @@ class NavigationController(ArbiAgent):
                     for p in single_path:
                         self.t_node[p] = [robotID]
                     self.global_waiting = False
+            print("request queue end")
 
         if not self.global_waiting:
+            print("global waiting start")
+            print(self.multipath)
+            print(self.robot_state)
+            print(self.t_node)
             for robot_name in self.robot_list:
                 if self.multipath[robot_name] and self.robot_state[robot_name] == 'done':
-                    if self.t_node[self.multipath[robot_name][0]][0] == robot_name:
-                        self.navigate_single_step(robot_name, self.multipath[robot_name][0])
-                        self.robot_state[robot_name] = 'moving'
+                    # print("t_node : " + str(self.t_node))
+                    # print("multi path : " + str(self.multipath[robot_name]))
+                    node = self.multipath[robot_name][0]
+                    if node in self.t_node.keys():
+                        if self.t_node[node][0] == robot_name:
+                            self.navigate_single_step(robot_name, self.multipath[robot_name][0])
+                            self.robot_state[robot_name] = 'moving'
+            print("global waiting end")
 
     def on_start(self):
         self.ds.connect(self.broker_url, "ds://www.arbi.com/NavigationController", BrokerType.ZERO_MQ)
@@ -207,30 +222,36 @@ class NavigationController(ArbiAgent):
         robot_id, move_type, vertex = self.action_parser(action_id)
         pre_position = self.robot_position[robot_id]
         self.robot_state[robot_id] = 'done'
-        action_result = "(ActionResult\"" + self.actionID[robot_id] + "\"\"" + result + "\")"
+        action_result = "(ActionResult \"" + self.actionID[robot_id] + "\" \"" + result + "\")"
 
-        for k, v in self.t_node.items():
-            print(k, v)
+        # for k, v in self.t_node.items():
+        #     print(k, v)
         for k, v in self.multipath.items():
             print(k, v)
 
         if move_type == 'Move':
-            self.t_node[pre_position].pop(0)
-            if not self.t_node[pre_position]:
-                del self.t_node[pre_position]
+            print("in move")
+            if pre_position in self.t_node.keys():
+                self.t_node[pre_position].pop(0)
+                if not self.t_node[pre_position]:
+                    del self.t_node[pre_position]
             self.multipath[robot_id].pop(0)
             self.robot_position[robot_id] = vertex
             if not self.multipath[robot_id]:
                 print('path finished!')
                 self.send("agent://www.arbi.com/TaskManager", action_result)
+            print("move finished")
         else:
+            print("in else : " + str(move_type))
             if move_type == 'Enter':
-                self.t_node[pre_position].pop(0)
-                if not self.t_node[pre_position]:
-                    del self.t_node[pre_position]
+                if pre_position in self.t_node.keys():
+                    self.t_node[pre_position].pop(0)
+                    if not self.t_node[pre_position]:
+                        del self.t_node[pre_position]
             print('### send exit of enter ###')
             print(action_result)
             self.send("agent://www.arbi.com/TaskManager", action_result)
+            print("else finished")
 
     def on_request(self, sender: str, request: str) -> str:
         print("\nON REQUEST")
@@ -258,8 +279,8 @@ if __name__ == '__main__':
         ip = sys.argv[1]
     else:
         # ip = "tcp://172.16.165.141:61316"
-        ip = "tcp://127.0.0.1:61316"
+        ip = brokerURL
     nc = NavigationController(ip)
-    nc.request_single_path('158', '102')
+    # nc.request_single_path('158', '102')
     while True:
         pass
