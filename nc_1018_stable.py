@@ -103,20 +103,23 @@ class NavigationController(ArbiAgent):
         response = self.request("agent://www.arbi.com/MultiAgentPathFinder", request_msg)
         response_gl = generalized_list_factory.new_gl_from_gl_string(response)
         multipath = {}
-        print('response from mapf+++')
-        print(response_gl)
         for idx, r in enumerate(self.robot_list):
             temp_gl = response_gl.get_expression(idx).as_generalized_list()
             path = str(temp_gl.get_expression(1))[:-1]
-            multipath[r] = path.split(' ')[2:]
+            temp_split = path.split(' ')
+            # print('&&&&&&&&&&&&&&&&&&&&&&&7')
+            # print(temp_split)
+            multipath[r] = temp_split[2:]
 
         self.reduce_t_node(multipath)
 
     def reduce_t_node(self, multipath):
+        print('multipath input')
+        for k ,v in multipath.items():
+            print(k, v)
         t_node = {}
-        for k, v in multipath.items():
-            if v:
-                t_node[self.robot_position[k]] = [k]
+        for r in self.robot_list:
+            t_node[self.robot_position[r]] = [r]
 
         temp_len = [len(v) for v in multipath.values()]
         max_len = max(temp_len)
@@ -127,7 +130,6 @@ class NavigationController(ArbiAgent):
                         t_node[multipath[k][i]].append(k)
                     else:
                         t_node[multipath[k][i]] = [k]
-
         self.t_node = self.remove_overlap(t_node)
         self.multipath = self.remove_overlap(multipath)
         for r in self.robot_list:
@@ -152,41 +154,28 @@ class NavigationController(ArbiAgent):
                     self.t_node[end_vertex] = [robotID]
 
             else:
-                self.col_flag = True
-                '''
-                single_path = self.request_single_path(start_vertex, end_vertex)
-                for p in single_path[1:]:
-                    if p in self.t_node.keys() and self.t_node[p]:
-                        self.col_flag = True
+                self.global_waiting = True
+                pop_flag = True
+                for s in self.robot_state.values():
+                    if s == 'moving':
+                        pop_flag = False
                         break
-                '''
-                if self.col_flag:
-                    self.global_waiting = True
-                    for s in self.robot_state.values():
-                        if s == 'moving':
-                            break
-                    else:
-                        self.request_queue.pop(0)
-                        self.actionID[robotID] = actionID
-                        multipath_input = []
-                        self.multipath[robotID] = [end_vertex]
-                        for r in self.robot_list:
-                            start = self.retrieve_robot_at(r)
-                            if self.multipath[r]:
-                                end = self.multipath[r][-1]
-                            else:
-                                end = start
-                            multipath_input.append(start + ' ' + end)
-
-                        self.request_to_mapf(multipath_input)
-                        self.global_waiting = False
-                        self.col_flag = False
-                else:
+                if pop_flag:
+                    print('pop occurs')
+                    print(actionID, robotID, start_vertex, end_vertex)
                     self.request_queue.pop(0)
                     self.actionID[robotID] = actionID
-                    self.multipath[robotID] = single_path[1:]
-                    for p in single_path:
-                        self.t_node[p] = [robotID]
+                    multipath_input = []
+                    self.multipath[robotID] = [end_vertex]
+                    for r in self.robot_list:
+                        start = self.retrieve_robot_at(r)
+                        if self.multipath[r]:
+                            end = self.multipath[r][-1]
+                        else:
+                            end = start
+                        multipath_input.append(start + ' ' + end)
+
+                    self.request_to_mapf(multipath_input)
                     self.global_waiting = False
 
         if not self.global_waiting:
@@ -195,7 +184,7 @@ class NavigationController(ArbiAgent):
                     if self.t_node[self.multipath[robot_name][0]][0] == robot_name:
                         self.navigate_single_step(robot_name, self.multipath[robot_name][0])
                         self.robot_state[robot_name] = 'moving'
-
+                        self.multipath[robot_name].pop(0)
     def on_start(self):
         self.ds.connect(self.broker_url, "ds://www.arbi.com/NavigationController", BrokerType.ZERO_MQ)
 
@@ -207,6 +196,7 @@ class NavigationController(ArbiAgent):
         action_id, result = self.msg_parser(gl_msg, [0, 1])
         robot_id, move_type, vertex = self.action_parser(action_id)
         pre_position = self.robot_position[robot_id]
+        self.robot_position[robot_id] = vertex
         self.robot_state[robot_id] = 'done'
         action_result = "(ActionResult\"" + self.actionID[robot_id] + "\"\"" + result + "\")"
 
@@ -214,8 +204,7 @@ class NavigationController(ArbiAgent):
             self.t_node[pre_position].pop(0)
             if not self.t_node[pre_position]:
                 del self.t_node[pre_position]
-            self.multipath[robot_id].pop(0)
-            self.robot_position[robot_id] = vertex
+
             if not self.multipath[robot_id]:
                 print('path finished!')
                 self.send("agent://www.arbi.com/TaskManager", action_result)
