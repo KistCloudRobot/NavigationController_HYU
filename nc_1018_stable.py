@@ -1,7 +1,7 @@
 import sys, time
 from copy import deepcopy as dc
 
-sys.path.append("/home/lab2/python_project/PythonARBIFramework")
+sys.path.append("/home/kist/pythonProject/Python-mcArbiFramework")
 # currentFilePath = pathlib.Path(__file__).parent.resolve()
 # sys.path.append(str(currentFilePath) + "/PythonARBIFramework")
 
@@ -247,8 +247,9 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         ip = sys.argv[1]
     else:
+        ip = "tcp://192.168.100.10:61316"
         # ip = "tcp://172.16.165.141:61316"
-        ip = "tcp://127.0.0.1:61316"
+        # ip = "tcp://127.0.0.1:61316"
     nc = NavigationController(ip)
     while True:
         pass
