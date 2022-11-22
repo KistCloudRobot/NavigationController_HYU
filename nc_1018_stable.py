@@ -230,9 +230,12 @@ class NavigationController(ArbiAgent):
         return "(ok)"
 
     def navigate_single_step(self, robot_id, end_vertex):
-        path = "\"(Path " + str(end_vertex) + "))"
-        print('single step query', self.robot_position[robot_id], path)
+        robot_pos = self.robot_position[robot_id]
+        if robot_pos is None:
+            robot_pos = self.retrieve_robot_at(robot_id)
+        path = "\"(Path " + str(robot_pos) + " " + str(end_vertex) + "))"
         move_msg = "(RequestMove \"" + robot_id + "+Move_" + end_vertex + "\"\"" + robot_id + path
+        print('single step query :', move_msg)
         self.request("agent://www.arbi.com/TaskManager", move_msg)
 
     def send_enter_exit_msg(self, gl_msg, action):
