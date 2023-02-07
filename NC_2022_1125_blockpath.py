@@ -11,13 +11,13 @@ from arbi_agent.ltm.data_source import DataSource
 from arbi_agent.model import generalized_list_factory
 from arbi_agent.configuration import BrokerType
 
-broker_host = "127.0.0.1"
+# broker_host = "127.0.0.1"
 # broker_host = "192.168.100.10"
-# broker_host = "172.16.165.141"
+broker_host = "172.16.165.143"
 # broker_host = "192.168.100.10"
 broker_port = 61316
-# broker_type = BrokerType.ACTIVE_MQ
-broker_type = BrokerType.ZERO_MQ
+broker_type = BrokerType.ACTIVE_MQ
+# broker_type = BrokerType.ZERO_MQ
 
 
 class NCDataSource(DataSource):
@@ -46,7 +46,8 @@ class NavigationController(ArbiAgent):
         self.multipath = {}
         self.robot_position = {}
         self.t_node = {}
-        self.robot_list = ["AMR_LIFT1", "AMR_LIFT2", "AMR_LIFT3", "AMR_LIFT4"]
+        # self.robot_list = ["AMR_LIFT1", "AMR_LIFT2", "AMR_LIFT3", "AMR_LIFT4"]
+        self.robot_list = ["AMR_LIFT1", "AMR_LIFT2"]
         #########################################
         self.block_constant = 6  # This value should be more than 1. (2, 3, 4, ~)
         self.robot_path_block = {}
@@ -208,8 +209,9 @@ class NavigationController(ArbiAgent):
                 waiting_nav = True
                 break
 
+        #(._)
         if not waiting_nav:
-            print('not waiting_nav')
+            # print('not waiting_nav')
             for robot_name in self.robot_list:
                 if self.multipath[robot_name] and (self.robot_state[robot_name] == 'done'):
                     if self.t_node[self.multipath[robot_name][0]][0] == robot_name:
