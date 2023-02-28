@@ -11,7 +11,7 @@ from arbi_agent.configuration import BrokerType
 
 # broker_host = "127.0.0.1"
 # broker_host = "192.168.100.10"
-broker_host = "172.16.165.143"
+broker_host = "172.16.165.158"
 broker_port = 61316
 broker_type = BrokerType.ACTIVE_MQ
 
@@ -61,7 +61,8 @@ class NavigationController(ArbiAgent):
 
         self.request_queue = []
         self.node_queue = retrieve_all_vertex()
-        self.robot_id_list = ['AMR_LIFT1', 'AMR_LIFT2']
+        # self.robot_id_list = ['AMR_LIFT1', 'AMR_LIFT2']
+        self.robot_id_list = ['AMR_LIFT1', 'AMR_LIFT2', 'AMR_LIFT3', 'AMR_LIFT4']
         self.multipath = {r: [] for r in self.robot_id_list}
         self.robot_state = {r: 'entered' for r in self.robot_id_list}
         self.robot_canceled = {r: False for r in self.robot_id_list}
@@ -84,10 +85,11 @@ class NavigationController(ArbiAgent):
             if not self.cancel_switch:
                 self.process_request_queue_2()
                 self.execute_multipath()
-                print('111', self.robot_state)
+                print('111', self.robot_state, self.robot_position)
             else:
                 self.process_request_queue_3()
-                print('222', self.robot_state)
+                print('222', self.robot_state, self.robot_position)
+            print("^^^multipath : ", self.multipath)
             time.sleep(1)
 
     def retrieve_robot_at(self, robot_id):
@@ -156,15 +158,17 @@ class NavigationController(ArbiAgent):
                             self.request("agent://www.arbi.com/TaskManager", cancel_msg)
                             self.robot_state[robot_id] = 'canceling'
                             self.robot_canceled[robot_id] = True
+                            print('cancel_msg ', cancel_msg)
                         elif self.robot_state[robot_id] == 'moving_last_block':
                             if len(self.multipath[robot_id]) > self.thr_last_block:
                                 self.request('agent://www.arbi.com/TaskManager', cancel_msg)
                                 self.robot_state[robot_id] = 'canceling'
                                 self.robot_canceled[robot_id] = True
+                                print('cancel_msg (last block) ', cancel_msg)
 
     def process_request_queue_3(self):
         for robot_id in self.robot_id_list:
-            if self.robot_state[robot_id] not in ['canceled', 'entered', 'exited']:
+            if self.robot_state[robot_id] not in ['waiting_for_entering', 'canceled', 'entered', 'exited']:
                 break
         else:
             for i in range(len(self.request_queue) - 1, -1, -1):
@@ -186,9 +190,12 @@ class NavigationController(ArbiAgent):
         for robot_id in self.robot_id_list:
             if self.robot_state[robot_id] == 'waiting_for_moving':
                 block_len = 1
+                temp_set = [self.multipath[robot_id][0]]
                 for idx in range(1, len(self.multipath[robot_id])):
-                    if robot_id == self.node_queue[self.multipath[robot_id][idx]][0]:
+                    if robot_id == self.node_queue[self.multipath[robot_id][idx]][0] \
+                            and self.multipath[robot_id][idx] not in temp_set:
                         block_len += 1
+                        temp_set.append(self.multipath[robot_id][idx])
                     else:
                         break
                 if block_len > 1:
@@ -231,12 +238,12 @@ class NavigationController(ArbiAgent):
         action_id = generalized_list_factory.new_gl_from_gl_string(data).get_expression(0).as_value().string_value()
         robot_id = action_id.split('+')[0]
         if self.robot_state[robot_id] in ['moving_last_block', 'entering', 'exiting']:
-            action_result = f'(ActionResult"{self.action_id[robot_id]}""success")'
+            action_result = f'(GoalResult"{self.action_id[robot_id]}""success")'
             print('action_result', action_result)
             self.send("agent://www.arbi.com/TaskManager", action_result)
 
         self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
-        '''
+
         print(self.robot_state[robot_id])
         print('robot state', self.robot_state)
         print('curr_position', self.robot_position)
@@ -245,7 +252,6 @@ class NavigationController(ArbiAgent):
                 print(k, v)
         for k, v in self.multipath.items():
             print(k, v)
-        '''
 
     def on_request(self, sender: str, request: str) -> str:
         print(f'ON REQUEST\nsender : {sender}\non request : {request}\n')
