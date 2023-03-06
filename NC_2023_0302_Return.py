@@ -70,7 +70,7 @@ class NavigationController(ArbiAgent):
         self.state_seq = {'moving_for_entering': 'waiting_for_entering',
                           'moving_for_return': 'returned', 'moving': 'waiting_for_moving',
                           'canceling': 'canceled', 'entering': 'entered', 'exiting': 'exited'}
-        self.state_seq_inv = {'entered': 'exiting', 'waiting_for_entering': 'entering'}
+        self.state_seq_inv = {'entered': 'exiting', 'waiting_for_entering': 'entering', 'returned':'moving'}
         self.thr_last_block = 5
         self.cancel_switch = False
         for r in self.robot_id_list:
