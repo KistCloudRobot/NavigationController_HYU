@@ -240,6 +240,7 @@ class NavigationController(ArbiAgent):
             action_result = f'(GoalResult"{self.action_id[robot_id]}""success")'
             print('action_result', action_result)
             self.send("agent://www.arbi.com/TaskManager", action_result)
+            self.robot_nr_type[robot_id] = None
 
         self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
         print(self.robot_state[robot_id])
@@ -269,7 +270,6 @@ class NavigationController(ArbiAgent):
                 self.robot_state[robot_id] = 'moving_for_entering'
             else:
                 self.robot_state[robot_id] = 'moving_for_return'
-            self.robot_nr_type[robot_id] = None
 
     def send_enter_exit_msg(self, nav_msg):
         robot_id, move_type, vertex, direction = msg_parser(nav_msg, [1, 2, 3, 4])
