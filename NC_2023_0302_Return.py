@@ -1,5 +1,7 @@
 import sys
+import os
 import time
+import pathlib
 
 sys.path.append("/home/kist/pythonProject/Python-mcArbiFramework")
 
@@ -9,10 +11,16 @@ from arbi_agent.ltm.data_source import DataSource
 from arbi_agent.model import generalized_list_factory
 from arbi_agent.configuration import BrokerType
 
-# broker_host = "127.0.0.1"
-# broker_host = "192.168.100.10"
-broker_host = "172.16.165.158"
-broker_port = 61316
+broker_host = os.getenv("BROKER_ADDRESS")
+if broker_host is None:
+    # broker_host = "127.0.0.1"
+    # broker_host = "192.168.100.10"
+    broker_host = "172.16.165.164"
+
+broker_port = os.getenv("BROKER_PORT")
+if broker_port is None:
+    broker_port = 61316
+
 broker_type = BrokerType.ACTIVE_MQ
 
 
@@ -21,7 +29,7 @@ def msg_parser(navigate_msg, c):
 
 
 def retrieve_all_vertex():
-    with open("../MultiAgentPathFinder/map_parse/map_cloud.txt", "r") as map_info:
+    with open(pathlib.Path(__file__).parent.resolve() / "map_cloud.txt", "r") as map_info:
         result = {}
         info_str = map_info.read()
         for line in info_str.split('\n'):
@@ -70,7 +78,7 @@ class NavigationController(ArbiAgent):
         self.state_seq = {'moving_for_entering': 'waiting_for_entering',
                           'moving_for_return': 'returned', 'moving': 'waiting_for_moving',
                           'canceling': 'canceled', 'entering': 'entered', 'exiting': 'exited'}
-        self.state_seq_inv = {'entered': 'exiting', 'waiting_for_entering': 'entering'}
+        self.state_seq_inv = {'entered': 'exiting', 'waiting_for_entering': 'entering', 'returned':'moving'}
         self.thr_last_block = 5
         self.cancel_switch = False
         for r in self.robot_id_list:
@@ -92,7 +100,7 @@ class NavigationController(ArbiAgent):
                 print('222', self.robot_state, self.robot_position)
                 print(self.robot_nr_type)
             print("^^^multipath : ", self.multipath)
-            time.sleep(1)
+            time.sleep(0.1)
 
     def retrieve_robot_at(self, robot_id):
         query = f'(context (robotAt"{robot_id}"$v1 $v2))'
@@ -111,6 +119,8 @@ class NavigationController(ArbiAgent):
             prev_pos = self.robot_position[r]
             self.robot_position[r] = self.retrieve_robot_at(r)
             if prev_pos != self.robot_position[r]:
+                print('333, prev_pos : ', prev_pos)
+                print('444, ', self.node_queue[prev_pos])
                 self.node_queue[prev_pos].pop(0)
                 if self.multipath[r]:
                     self.multipath[r].pop(0)
@@ -240,6 +250,7 @@ class NavigationController(ArbiAgent):
             action_result = f'(GoalResult"{self.action_id[robot_id]}""success")'
             print('action_result', action_result)
             self.send("agent://www.arbi.com/TaskManager", action_result)
+            self.robot_nr_type[robot_id] = None
 
         self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
         print(self.robot_state[robot_id])
@@ -269,11 +280,11 @@ class NavigationController(ArbiAgent):
                 self.robot_state[robot_id] = 'moving_for_entering'
             else:
                 self.robot_state[robot_id] = 'moving_for_return'
-            self.robot_nr_type[robot_id] = None
 
     def send_enter_exit_msg(self, nav_msg):
         robot_id, move_type, vertex, direction = msg_parser(nav_msg, [1, 2, 3, 4])
         request_msg = f'(Request{move_type}"{robot_id}+EXIT_ENTER""{robot_id}"{vertex}"{direction}")'
+        print(f'EXIT-ENTER robot_id : {robot_id}, move_type : {move_type}, state : {self.robot_state[robot_id]}')
         self.request("agent://www.arbi.com/TaskManager", request_msg)
         self.robot_state[robot_id] = self.state_seq_inv[self.robot_state[robot_id]]
 
