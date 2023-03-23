@@ -148,11 +148,11 @@ class NavigationController(ArbiAgent):
             else:
                 single_path = self.request_single_path(start_vertex, end_vertex)
                 single_path_flag = True
-                for n in single_path:
+                for n in single_path[1:]:
                     if self.node_queue[n]:
                         single_path_flag = False
                         break
-
+                print('single_path_option : ', single_path_flag)
                 if single_path_flag:
                     self.request_queue.pop(0)
                     self.action_id[robot_id] = action_id
