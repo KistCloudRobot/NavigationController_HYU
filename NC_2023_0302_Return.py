@@ -100,7 +100,7 @@ class NavigationController(ArbiAgent):
             print("^^^multipath : ", self.multipath)
             time.sleep(0.1)
 
-    def retrieve_robot_at(self, robot_id):
+    def retrieve_robot_at(self, robot_id, second_opt=1):
         query = f'(context (robotAt"{robot_id}"$v1 $v2))'
         while True:
             query_result = self.ds.retrieve_fact(query)
@@ -110,7 +110,7 @@ class NavigationController(ArbiAgent):
             else:
                 gl_query_result = generalized_list_factory.new_gl_from_gl_string(query_result)
                 result = gl_query_result.get_expression(0).as_generalized_list()
-                return str(result.get_expression(1).as_value().int_value())
+                return str(result.get_expression(second_opt).as_value().int_value())
 
     def update_node_queue_multipath(self):
         for idx, r in enumerate(self.robot_id_list):
@@ -268,7 +268,9 @@ class NavigationController(ArbiAgent):
     def send_navigate_msg(self, robot_id, path):
         if self.robot_canceled[robot_id]:
             self.robot_canceled[robot_id] = False
-            path = path[1:]
+            ver_2 = self.retrieve_robot_at(robot_id, second_opt=2)
+            if path[1] == ver_2:
+                path = path[1:]
         path_temp = ' '.join(path)
         move_msg = f'(RequestMove"{robot_id}+Move""{robot_id}"(Path {path_temp}))'
         self.request("agent://www.arbi.com/TaskManager", move_msg)
