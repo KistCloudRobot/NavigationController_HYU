@@ -1,6 +1,7 @@
 import sys
 import time
-
+import os
+import pathlib
 sys.path.append("/home/kist/pythonProject/Python-mcArbiFramework")
 
 from arbi_agent.agent.arbi_agent import ArbiAgent
@@ -77,7 +78,7 @@ class NavigationController(ArbiAgent):
                           'moving_for_return': 'returned', 'moving': 'waiting_for_moving',
                           'canceling': 'canceled', 'entering': 'entered', 'exiting': 'exited'}
         self.state_seq_inv = {'entered': 'exiting', 'waiting_for_entering': 'entering', 'returned':'moving'}
-        self.thr_last_block = 5
+        self.thr_last_block = 2 # 3?
         self.cancel_switch = False
         for r in self.robot_id_list:
             self.node_queue[self.robot_position[r]] = [r]
@@ -153,13 +154,15 @@ class NavigationController(ArbiAgent):
                         single_path_flag = False
                         break
                 print('single_path_option : ', single_path_flag)
+                print('temp log ', single_path)
                 if single_path_flag:
                     self.request_queue.pop(0)
                     self.action_id[robot_id] = action_id
-                    self.send_navigate_msg(robot_id, single_path)
+                    self.multipath[robot_id] = single_path
                     self.robot_nr_type[robot_id] = nav_msg.get_name()
-                    for n in single_path:
+                    for n in single_path[1:]:
                         self.node_queue[n] = [robot_id]
+                    self.send_navigate_msg(robot_id, single_path)
                 else:
                     self.cancel_switch = True
                     for robot_id in self.robot_id_list:
@@ -275,6 +278,8 @@ class NavigationController(ArbiAgent):
         move_msg = f'(RequestMove"{robot_id}+Move""{robot_id}"(Path {path_temp}))'
         self.request("agent://www.arbi.com/TaskManager", move_msg)
         self.robot_state[robot_id] = 'moving'
+        print('temp log 2', path)
+        print('temp log 3', self.multipath[robot_id])
         if path[-1] == self.multipath[robot_id][-1]:
             if self.robot_nr_type[robot_id] == 'RequestNavigate':
                 self.robot_state[robot_id] = 'moving_for_entering'
