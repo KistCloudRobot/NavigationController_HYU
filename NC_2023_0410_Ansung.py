@@ -75,6 +75,7 @@ class NavigationController(ArbiAgent):
         self.robot_canceled = {r: False for r in self.robot_id_list}
         self.action_id = {r: str() for r in self.robot_id_list}
         self.robot_position = {r: self.retrieve_robot_at(r) for r in self.robot_id_list}
+        self.path_block_cnt = {r: None for r in self.robot_id_list}
         self.state_seq = {'moving_for_entering': 'waiting_for_entering',
                           'moving_for_return': 'returned', 'moving': 'waiting_for_moving',
                           'canceling': 'canceled', 'entering': 'entered', 'exiting': 'exited'}
@@ -104,7 +105,7 @@ class NavigationController(ArbiAgent):
         str_info = f'{fn_n}, id, state, position, nr_type, multipath\n'
         for r in self.robot_id_list:
             str_info += f'{r}, {self.robot_state[r]}, {self.robot_position[r]}'
-            str_info += f'{self.robot_nr_type[r]}, {self.multipath[r]}\n'
+            str_info += f', {self.robot_nr_type[r]}, {self.multipath[r]}\n'
         if str_info != self.previous_print:
             print(str_info)
             self.previous_print = str_info
@@ -132,6 +133,8 @@ class NavigationController(ArbiAgent):
                     self.multipath[r].pop(0)
                     if len(self.multipath[r]) == 1:
                         self.multipath[r] = []
+                if self.path_block_cnt[r]:
+                    self.path_block_cnt[r][0] += 1
 
     def process_request_queue_1(self):
         for i in range(len(self.request_queue) - 1, -1, -1):
@@ -171,12 +174,19 @@ class NavigationController(ArbiAgent):
                     self.cancel_switch = True
                     for robot_id in self.robot_id_list:
                         cancel_msg = f'(RequestCancelMove"{robot_id}+Cancel""{robot_id}")'
-                        if self.robot_state[robot_id] == 'moving' or (
-                                self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return'] and
-                                len(self.multipath[robot_id]) > self.thr_last_block):
-                            self.request("agent://www.arbi.com/TaskManager", cancel_msg)
-                            self.robot_state[robot_id] = 'canceling'
-                            self.robot_canceled[robot_id] = True
+
+                        if self.robot_state[robot_id] == 'moving':
+                            temp = self.path_block_cnt[robot_id]
+                            if temp[1] - temp[0] > self.thr_last_block:
+                                self.request("agent://www.arbi.com/TaskManager", cancel_msg)
+                                self.robot_state[robot_id] = 'canceling'
+                                self.robot_canceled[robot_id] = True
+                                self.path_block_cnt[robot_id] = None
+                        elif self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return']:
+                            if len(self.multipath[robot_id]) > self.thr_last_block:
+                                self.request("agent://www.arbi.com/TaskManager", cancel_msg)
+                                self.robot_state[robot_id] = 'canceling'
+                                self.robot_canceled[robot_id] = True
 
     def process_request_queue_3(self):
         for robot_id in self.robot_id_list:
@@ -206,13 +216,14 @@ class NavigationController(ArbiAgent):
                 block_len = 1
                 temp_set = [self.multipath[robot_id][0]]
                 for idx in range(1, len(self.multipath[robot_id])):
-                    if robot_id == self.node_queue[self.multipath[robot_id][idx]][0] \
-                            and self.multipath[robot_id][idx] not in temp_set:
-                        block_len += 1
-                        temp_set.append(self.multipath[robot_id][idx])
+                    if robot_id == self.node_queue[self.multipath[robot_id][idx]][0]:
+                        if self.multipath[robot_id][idx] not in temp_set:
+                            block_len += 1
+                            temp_set.append(self.multipath[robot_id][idx])
                     else:
                         break
                 if block_len > 1:
+                    self.path_block_cnt[robot_id] = [0, block_len]
                     self.send_navigate_msg(robot_id, self.multipath[robot_id][:block_len])
 
     def request_multipath(self, multipath_str):
@@ -248,6 +259,7 @@ class NavigationController(ArbiAgent):
         return str(temp_gl.get_expression(1))[:-1].split(' ')[1:]
 
     def on_data(self, sender: str, data: str):
+
         print(f'ON DATA\nsender : {sender}\non data : {data}\n')
         action_id = generalized_list_factory.new_gl_from_gl_string(data).get_expression(0).as_value().string_value()
         robot_id = action_id.split('+')[0]
@@ -257,13 +269,35 @@ class NavigationController(ArbiAgent):
             self.robot_nr_type[robot_id] = None
 
         self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
+        '''
+        print(f'ON DATA\nsender : {sender}\non data : {data}\n')
+        action_id = generalized_list_factory.new_gl_from_gl_string(data).get_expression(0).as_value().string_value()
+        robot_id, action_type = action_id.split('+')
+        goal_result = f'(GoalResult"{self.action_id[robot_id]}""success")'
+        if self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return', 'entering', 'exiting']:
+            self.send("agent://www.arbi.com/TaskManager", goal_result)
+            self.robot_nr_type[robot_id] = None
+            self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
+        elif action_type == 'Cancel':
+            if not self.multipath[robot_id]:
+                print('error_related_to_cancel_response')
+                self.send("agent://www.arbi.com/TaskManager", goal_result)
+                if self.robot_nr_type[robot_id] == 'RequestNavigate':
+                    self.robot_state[robot_id] = 'waiting_for_entering'
+                else:
+                    self.robot_state[robot_id] = 'returned'
+                self.robot_nr_type[robot_id] = None
+        else:
+            self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
+        '''
+
+
         print(f'robot id : {robot_id}\nstate, position, path')
         for rr in self.robot_id_list:
             print(f'{rr} info : {self.robot_state[rr]}, {self.robot_position[rr]}, {self.multipath[rr]}')
         for k, v in self.node_queue.items():
             if v:
                 print(k, v)
-
     def on_request(self, sender: str, request: str) -> str:
         print(f'ON REQUEST\nsender : {sender}\non request : {request}\n')
         self.request_queue.append(generalized_list_factory.new_gl_from_gl_string(request))
