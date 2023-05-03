@@ -1,64 +1,157 @@
 import sys
 import time
-from nc_utils import msg_parser, remove_overlap, NCBase
+import os
+import pathlib
 
 sys.path.append("/home/kist/pythonProject/Python-mcArbiFramework")
 
+from arbi_agent.agent.arbi_agent import ArbiAgent
+from arbi_agent.agent import arbi_agent_executor
+from arbi_agent.ltm.data_source import DataSource
 from arbi_agent.model import generalized_list_factory
 from arbi_agent.configuration import BrokerType
 
-# broker_host = "127.0.0.1"
-# broker_host = "192.168.100.10"
-broker_host = "172.16.165.158"
-broker_port = 61316
+broker_host = os.getenv("BROKER_ADDRESS")
+if broker_host is None:
+    # broker_host = "127.0.0.1"
+    # broker_host = "192.168.100.10"
+    broker_host = "172.16.165.164"
+
+broker_port = os.getenv("BROKER_PORT")
+if broker_port is None:
+    broker_port = 61316
+
 broker_type = BrokerType.ACTIVE_MQ
 
 
-class NavigationController(NCBase):
-    def __init__(self):
-        super().__init__(broker_host, broker_port, broker_type)
+def msg_parser(navigate_msg, c):
+    return [navigate_msg.get_expression(i).as_value().string_value() for i in c]
+
+
+def retrieve_all_vertex():
+    with open(pathlib.Path(__file__).parent.resolve() / "map_cloud.txt", "r") as map_info:
+        result = {}
+        info_str = map_info.read()
+        for line in info_str.split('\n'):
+            target = line.split(' ')
+            if target[0] == '\tname':
+                result[target[1]] = []
+
+    return result
+
+
+def remove_overlap(d):
+    for k, v in d.items():
+        if v:
+            for i in range(len(v) - 1, 0, -1):
+                if v[i] == v[i - 1]:
+                    v.pop(i)
+
+
+class NCDataSource(DataSource):
+    def __init__(self, nc):
+        self.nc = nc
+        super().__init__()
+
+    def on_notify(self, notification):
+        print(f'on notify : {notification}')
+        robot_id, v1, v2 = msg_parser(notification, [0, 1, 2])
+        if self.nc.robot_position[robot_id]:
+            if (v1, v2) == self.nc.robot_position[robot_id]:
+                pass
+            else:
+                if v1 != self.nc.robot_position[robot_id][0]:
+                    prev_v1 = self.nc.robot_position[robot_id][0]
+                    print(f'{robot_id} position has been changed : {prev_v1} -> {v1}')
+                    self.node_queue[prev_v1].pop(0)
+                    if self.multipath[robot_id]:
+                        self.multipath[robot_id].pop(0)
+                        if len(self.multipath[robot_id]) == 1:
+                            self.multipath[robot_id] = []
+                    if self.path_block_cnt[robot_id]:
+                        self.path_block_cnt[robot_id][0] += 1
+                self.nc.robot_position[robot_id] = (v1, v2)
+        else:
+            self.nc.robot_position[robot_id] = (v1, v2)
+
+
+class NavigationController(ArbiAgent):
+    def __init__(self, host, port):
+        super().__init__()
+        arbi_agent_executor.execute(broker_host=host, broker_port=port,
+                                    agent_name="agent://www.arbi.com/NavigationController",
+                                    agent=self, broker_type=broker_type, daemon=False)
+
         self.request_queue = []
+        self.node_queue = retrieve_all_vertex()
         self.robot_id_list = ['AMR_LIFT1', 'AMR_LIFT2', 'AMR_LIFT3', 'AMR_LIFT4']
         self.multipath = {r: [] for r in self.robot_id_list}
         self.robot_state = {r: 'returned' for r in self.robot_id_list}
         self.robot_nr_type = {r: None for r in self.robot_id_list}
         self.robot_canceled = {r: False for r in self.robot_id_list}
         self.action_id = {r: str() for r in self.robot_id_list}
-        self.robot_position = {r: self.retrieve_robot_at(r) for r in self.robot_id_list}
+        self.robot_position = {r: tuple() for r in self.robot_id_list}
+        self.path_block_cnt = {r: None for r in self.robot_id_list}
         self.state_seq = {'moving_for_entering': 'waiting_for_entering',
                           'moving_for_return': 'returned', 'moving': 'waiting_for_moving',
                           'canceling': 'canceled', 'entering': 'entered', 'exiting': 'exited'}
-        self.state_seq_inv = {'entered': 'exiting', 'waiting_for_entering': 'entering'}
-        self.thr_last_block = 5
+        self.state_seq_inv = {'entered': 'exiting', 'waiting_for_entering': 'entering', 'returned': 'moving'}
+        self.previous_print = ''
+        self.thr_last_block = 3
         self.cancel_switch = False
-        for r in self.robot_id_list:
-            self.node_queue[self.robot_position[r]] = [r]
 
-        while len(self.request_queue) != len(self.robot_id_list):
-            time.sleep(1)
+        self.ds = NCDataSource(self)
+        self.ds.connect(broker_host, broker_port, "ds://www.arbi.com/NavigationController", broker_type)
 
+        time.sleep(5)
         while True:
-            self.update_node_queue_multipath()
             self.process_request_queue_1()
             if not self.cancel_switch:
                 self.process_request_queue_2()
                 self.execute_multipath()
-                self.print_fn(2)
+                self.custom_print('fn_2')
             else:
                 self.process_request_queue_3()
-                self.print_fn(3)
-            time.sleep(1)
+                self.custom_print('fn_3')
+            time.sleep(0.1)
+
+    def custom_print(self, fn_n):
+        str_info = f'{fn_n}, id, state, position, nr_type, multipath\n'
+        for r in self.robot_id_list:
+            str_info += f'{r}, {self.robot_state[r]}, {self.robot_position[r]}'
+            str_info += f', {self.robot_nr_type[r]}, {self.multipath[r]}\n'
+        if str_info != self.previous_print:
+            print(str_info)
+            self.previous_print = str_info
+
+    '''
+    def retrieve_robot_at(self, robot_id, second_opt=1):
+        query = f'(context (robotAt"{robot_id}"$v1 $v2))'
+        while True:
+            query_result = self.ds.retrieve_fact(query)
+            if query_result == '(error)':
+                print(f'Waiting for robot Info {robot_id}...')
+                time.sleep(1)
+            else:
+                gl_query_result = generalized_list_factory.new_gl_from_gl_string(query_result)
+                result = gl_query_result.get_expression(0).as_generalized_list()
+                return str(result.get_expression(second_opt).as_value().int_value())
+    
 
     def update_node_queue_multipath(self):
         for idx, r in enumerate(self.robot_id_list):
             prev_pos = self.robot_position[r]
             self.robot_position[r] = self.retrieve_robot_at(r)
             if prev_pos != self.robot_position[r]:
+                print(f'{r} position has been changed : {prev_pos} -> {self.robot_position[r]}')
                 self.node_queue[prev_pos].pop(0)
                 if self.multipath[r]:
                     self.multipath[r].pop(0)
                     if len(self.multipath[r]) == 1:
                         self.multipath[r] = []
+                if self.path_block_cnt[r]:
+                    self.path_block_cnt[r][0] += 1
+    '''
 
     def process_request_queue_1(self):
         for i in range(len(self.request_queue) - 1, -1, -1):
@@ -79,32 +172,38 @@ class NavigationController(NCBase):
                     self.send_enter_exit_msg(nav_msg)
                     self.action_id[robot_id] = action_id
                     self.node_queue[end_vertex] = [robot_id]
-
             else:
                 single_path = self.request_single_path(start_vertex, end_vertex)
                 single_path_flag = True
-                for n in single_path:
+                for n in single_path[1:]:
                     if self.node_queue[n]:
                         single_path_flag = False
                         break
-
                 if single_path_flag:
                     self.request_queue.pop(0)
                     self.action_id[robot_id] = action_id
-                    self.send_navigate_msg(robot_id, single_path)
+                    self.multipath[robot_id] = single_path
                     self.robot_nr_type[robot_id] = nav_msg.get_name()
-                    for n in single_path:
+                    for n in single_path[1:]:
                         self.node_queue[n] = [robot_id]
+                    self.send_navigate_msg(robot_id, single_path)
                 else:
                     self.cancel_switch = True
                     for robot_id in self.robot_id_list:
                         cancel_msg = f'(RequestCancelMove"{robot_id}+Cancel""{robot_id}")'
-                        if self.robot_state[robot_id] == 'moving' or (
-                                self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return'] and
-                                len(self.multipath[robot_id]) > self.thr_last_block):
-                            self.request("agent://www.arbi.com/TaskManager", cancel_msg)
-                            self.robot_state[robot_id] = 'canceling'
-                            self.robot_canceled[robot_id] = True
+
+                        if self.robot_state[robot_id] == 'moving':
+                            temp = self.path_block_cnt[robot_id]
+                            if temp[1] - temp[0] > self.thr_last_block:
+                                self.request("agent://www.arbi.com/TaskManager", cancel_msg)
+                                self.robot_state[robot_id] = 'canceling'
+                                self.robot_canceled[robot_id] = True
+                                self.path_block_cnt[robot_id] = None
+                        elif self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return']:
+                            if len(self.multipath[robot_id]) > self.thr_last_block:
+                                self.request("agent://www.arbi.com/TaskManager", cancel_msg)
+                                self.robot_state[robot_id] = 'canceling'
+                                self.robot_canceled[robot_id] = True
 
     def process_request_queue_3(self):
         for robot_id in self.robot_id_list:
@@ -134,13 +233,14 @@ class NavigationController(NCBase):
                 block_len = 1
                 temp_set = [self.multipath[robot_id][0]]
                 for idx in range(1, len(self.multipath[robot_id])):
-                    if robot_id == self.node_queue[self.multipath[robot_id][idx]][0] \
-                            and self.multipath[robot_id][idx] not in temp_set:
-                        block_len += 1
-                        temp_set.append(self.multipath[robot_id][idx])
+                    if robot_id == self.node_queue[self.multipath[robot_id][idx]][0]:
+                        if self.multipath[robot_id][idx] not in temp_set:
+                            block_len += 1
+                            temp_set.append(self.multipath[robot_id][idx])
                     else:
                         break
                 if block_len > 1:
+                    self.path_block_cnt[robot_id] = [0, block_len]
                     self.send_navigate_msg(robot_id, self.multipath[robot_id][:block_len])
 
     def request_multipath(self, multipath_str):
@@ -176,16 +276,41 @@ class NavigationController(NCBase):
         return str(temp_gl.get_expression(1))[:-1].split(' ')[1:]
 
     def on_data(self, sender: str, data: str):
+
         print(f'ON DATA\nsender : {sender}\non data : {data}\n')
         action_id = generalized_list_factory.new_gl_from_gl_string(data).get_expression(0).as_value().string_value()
         robot_id = action_id.split('+')[0]
         if self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return', 'entering', 'exiting']:
             goal_result = f'(GoalResult"{self.action_id[robot_id]}""success")'
-            print('goal_result', goal_result)
-            self.robot_nr_type[robot_id] = None
             self.send("agent://www.arbi.com/TaskManager", goal_result)
+            self.robot_nr_type[robot_id] = None
 
         self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
+        '''
+        print(f'ON DATA\nsender : {sender}\non data : {data}\n')
+        action_id = generalized_list_factory.new_gl_from_gl_string(data).get_expression(0).as_value().string_value()
+        robot_id, action_type = action_id.split('+')
+        goal_result = f'(GoalResult"{self.action_id[robot_id]}""success")'
+        if self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return', 'entering', 'exiting']:
+            self.send("agent://www.arbi.com/TaskManager", goal_result)
+            self.robot_nr_type[robot_id] = None
+            self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
+        elif action_type == 'Cancel':
+            if not self.multipath[robot_id]:
+                print('error_related_to_cancel_response')
+                self.send("agent://www.arbi.com/TaskManager", goal_result)
+                if self.robot_nr_type[robot_id] == 'RequestNavigate':
+                    self.robot_state[robot_id] = 'waiting_for_entering'
+                else:
+                    self.robot_state[robot_id] = 'returned'
+                self.robot_nr_type[robot_id] = None
+        else:
+            self.robot_state[robot_id] = self.state_seq[self.robot_state[robot_id]]
+        '''
+
+        print(f'robot id : {robot_id}\nstate, position, path')
+        for rr in self.robot_id_list:
+            print(f'{rr} info : {self.robot_state[rr]}, {self.robot_position[rr]}, {self.multipath[rr]}')
         for k, v in self.node_queue.items():
             if v:
                 print(k, v)
@@ -198,9 +323,12 @@ class NavigationController(NCBase):
     def send_navigate_msg(self, robot_id, path):
         if self.robot_canceled[robot_id]:
             self.robot_canceled[robot_id] = False
-            path = path[1:]
+            ver_2 = self.robot_position[robot_id][2]
+            if path[1] == ver_2:
+                path = path[1:]
         path_temp = ' '.join(path)
         move_msg = f'(RequestMove"{robot_id}+Move""{robot_id}"(Path {path_temp}))'
+        print(f'EXIT-ENTER robot_id : {robot_id}, state : {self.robot_state[robot_id]}, block_path : {path_temp}')
         self.request("agent://www.arbi.com/TaskManager", move_msg)
         self.robot_state[robot_id] = 'moving'
         if path[-1] == self.multipath[robot_id][-1]:
@@ -212,11 +340,12 @@ class NavigationController(NCBase):
     def send_enter_exit_msg(self, nav_msg):
         robot_id, move_type, vertex, direction = msg_parser(nav_msg, [1, 2, 3, 4])
         request_msg = f'(Request{move_type}"{robot_id}+EXIT_ENTER""{robot_id}"{vertex}"{direction}")'
+        print(f'EXIT-ENTER robot_id : {robot_id}, move_type : {move_type}, state : {self.robot_state[robot_id]}')
         self.request("agent://www.arbi.com/TaskManager", request_msg)
         self.robot_state[robot_id] = self.state_seq_inv[self.robot_state[robot_id]]
 
 
 if __name__ == '__main__':
-    nc = NavigationController()
+    nc = NavigationController(broker_host, broker_port)
     while True:
         pass
