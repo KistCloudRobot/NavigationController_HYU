@@ -53,8 +53,6 @@ def remove_overlap(d):
                     v.pop(i)
 
 
-
-
 class NCDataSource(DataSource):
     def __init__(self, nc):
         self.nc = nc
@@ -214,7 +212,6 @@ class NavigationController(ArbiAgent):
             self.request_multipath(request_msg)
             time.sleep(1)
             self.cancel_switch = False
-
 
     def execute_multipath(self):
         for robot_id in self.robot_id_list:
