@@ -16,7 +16,7 @@ broker_host = os.getenv("BROKER_ADDRESS")
 if broker_host is None:
     # broker_host = "127.0.0.1"
     # broker_host = "192.168.100.10"
-    broker_host = "172.16.165.185"
+    broker_host = "172.16.165.77"
 
 broker_port = os.getenv("BROKER_PORT")
 if broker_port is None:
@@ -41,7 +41,7 @@ def retrieve_all_vertex():
             target = line.split(' ')
             if target[0] == '\tname':
                 result[target[1]] = []
-
+    print(str(result))
     return result
 
 
@@ -65,7 +65,7 @@ class NCDataSource(DataSource):
             if (v1, v2) != self.nc.robot_position[robot_id]:
                 prev_v12 = self.nc.robot_position[robot_id]
                 if v1 != self.nc.robot_position[robot_id][0]:
-                    if self.nc.robot_state[robot_id] in ['entering', 'exiting']:
+                    if self.nc.robot_state[robot_id] in ['entering', 'exiting', 'entered', 'exited']:
                         if self.nc.node_queue[prev_v12[0]] and self.nc.node_queue[prev_v12[0]][0] == robot_id:
                             self.nc.node_queue[prev_v12[0]].pop(0)
                             self.nc.robot_position[robot_id] = (v1, v2)
@@ -169,6 +169,8 @@ class NavigationController(ArbiAgent):
                     self.action_id[robot_id] = action_id
                     self.multipath[robot_id] = single_path
                     self.robot_nr_type[robot_id] = nav_msg.get_name()
+                    if not self.node_queue[single_path[0]]:
+                        self.node_queue[single_path[0]] = [robot_id]
                     for n in single_path[1:]:
                         self.node_queue[n] = [robot_id]
                     self.send_navigate_msg(robot_id, single_path)
@@ -195,6 +197,17 @@ class NavigationController(ArbiAgent):
             if self.robot_state[robot_id] not in ['returned', 'canceled', 'entered', 'exited', 'waiting_for_moving']:
                 break
         else:
+            #print('waiting for replanning', 5)
+            #time.sleep(1)
+            #print('waiting for replanning', 4)
+            #time.sleep(1)
+            #print('waiting for replanning', 3)
+            #time.sleep(1)
+            #print('waiting for replanning', 2)
+            #time.sleep(1)
+            print('waiting for replanning', 1)
+            time.sleep(1)
+            print('Replanning started')
             for i in range(len(self.request_queue) - 1, -1, -1):
                 temp_name = self.request_queue[i].get_name()
                 if temp_name in ['RequestNavigate', 'RequestReturn']:
@@ -292,7 +305,7 @@ class NavigationController(ArbiAgent):
                 path = path[1:]
         path_temp = ' '.join(path)
         move_msg = f'(RequestMove"{robot_id}+Move""{robot_id}"(Path {path_temp}))'
-        print(f'EXIT-ENTER robot_id : {robot_id}, state : {self.robot_state[robot_id]}, block_path : {path_temp}')
+        print(f'NAVIGATE robot_id : {robot_id}, state : {self.robot_state[robot_id]}, block_path : {path_temp}')
         self.request("agent://www.arbi.com/TaskManager", move_msg)
         self.robot_state[robot_id] = 'moving'
         if path[-1] == self.multipath[robot_id][-1]:
