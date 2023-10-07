@@ -1,24 +1,32 @@
 import sys
-import time
+import pathlib
 
 sys.path.append("/home/kist/pythonProject/Python-mcArbiFramework")
+sys.path.append("/home/uosai/pythonProject/Python-mcArbiFramework")
 
-from arbi_agent.agent.arbi_agent import ArbiAgent
 from arbi_agent.ltm.data_source import DataSource
-from arbi_agent.agent import arbi_agent_executor
 from arbi_agent.model import generalized_list_factory
 
 
-def msg_parser(navigate_msg, c):
-    return [navigate_msg.get_expression(i).as_value().string_value() for i in c]
+def msg_parser(msg, c):
+    return [msg.get_expression(i).as_value().string_value() for i in c]
 
 
-def remove_overlap(d):
-    for k, v in d.items():
-        if v:
-            for i in range(len(v) - 1, 0, -1):
-                if v[i] == v[i - 1]:
-                    v.pop(i)
+def ds_msg_parser(msg, c):
+    msg = generalized_list_factory.new_gl_from_gl_string(msg)
+    return [msg.get_expression(i).as_value().string_value() for i in c]
+
+
+def retrieve_all_vertex():
+    with open(pathlib.Path(__file__).parent.resolve() / "map_cloud.txt", "r") as map_info:
+        result = {}
+        info_str = map_info.read()
+        for line in info_str.split('\n'):
+            target = line.split(' ')
+            if target[0] == '\tname':
+                result[target[1]] = []
+    print(str(result))
+    return result
 
 
 class NCDataSource(DataSource):
@@ -27,40 +35,29 @@ class NCDataSource(DataSource):
         super().__init__()
 
     def on_notify(self, notification):
-        print(f'on notify : {notification}')
-
-
-class NCBase(ArbiAgent):
-    def __init__(self, broker_host, broker_port, broker_type):
-        super().__init__()
-        arbi_agent_executor.execute(broker_host=broker_host, broker_port=broker_port,
-                                    agent_name="agent://www.arbi.com/NavigationController",
-                                    agent=self, broker_type=broker_type, daemon=False)
-        self.ds = NCDataSource(self)
-        self.ds.connect(broker_host, broker_port, "ds://www.arbi.com/NavigationController", broker_type)
-        self.node_queue = {}
-        with open("../MultiAgentPathFinder/map_parse/map_cloud.txt", "r") as map_info:
-            info_str = map_info.read()
-            for line in info_str.split('\n'):
-                target = line.split(' ')
-                if target[0] == '\tname':
-                    self.node_queue[target[1]] = []
-
-    def retrieve_robot_at(self, robot_id):
-        query = f'(context (robotAt"{robot_id}"$v1 $v2))'
-        while True:
-            query_result = self.ds.retrieve_fact(query)
-            if query_result == '(error)':
-                print(f'Waiting for robot Info {robot_id}...')
-                time.sleep(1)
-            else:
-                gl_query_result = generalized_list_factory.new_gl_from_gl_string(query_result)
-                result = gl_query_result.get_expression(0).as_generalized_list()
-                return str(result.get_expression(1).as_value().int_value())
-
-    def print_fn(self, opt_num):
-        print(opt_num)
-        print(self.robot_state)
-        print(self.robot_position)
-        print(self.robot_nr_type)
-        print(self.multipath)
+        print("[ON NOTIFY] : " + str(notification))
+        robot_id, v1, v2 = ds_msg_parser(notification, [0, 1, 2])
+        if self.nc.robot_position[robot_id]:
+            if (v1, v2) != self.nc.robot_position[robot_id]:
+                prev_v12 = self.nc.robot_position[robot_id]
+                if v1 != self.nc.robot_position[robot_id][0]:
+                    if self.nc.robot_state[robot_id] in ['entering', 'exiting', 'entered', 'exited']:
+                        if self.nc.node_queue[prev_v12[0]] and self.nc.node_queue[prev_v12[0]][0] == robot_id:
+                            self.nc.node_queue[prev_v12[0]].pop(0)
+                            self.nc.robot_position[robot_id] = (v1, v2)
+                    else:
+                        if self.nc.node_queue[prev_v12[0]] and self.nc.node_queue[prev_v12[0]][0] == robot_id:
+                            if self.nc.multipath[robot_id] and self.nc.multipath[robot_id][0] == prev_v12[0]:
+                                if self.nc.multipath[robot_id][1] == v1:
+                                    self.nc.node_queue[prev_v12[0]].pop(0)
+                                    self.nc.multipath[robot_id].pop(0)
+                                    self.nc.robot_position[robot_id] = (v1, v2)
+                                    if len(self.nc.multipath[robot_id]) == 1:
+                                        self.nc.multipath[robot_id] = []
+                                    if self.nc.path_block_cnt[robot_id]:
+                                        self.nc.path_block_cnt[robot_id][0] += 1
+                else:
+                    self.nc.robot_position[robot_id] = (v1, v2)
+                print(f'{robot_id} position has been changed : {prev_v12} -> {(v1, v2)}')
+        else:
+            self.nc.robot_position[robot_id] = (v1, v2)
