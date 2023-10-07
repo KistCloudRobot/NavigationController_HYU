@@ -1,16 +1,16 @@
 import sys
 import time
 import os
-import pathlib
+import datetime
 
 sys.path.append("/home/kist/pythonProject/Python-mcArbiFramework")
 sys.path.append("/home/uosai/pythonProject/Python-mcArbiFramework")
 
 from arbi_agent.agent.arbi_agent import ArbiAgent
 from arbi_agent.agent import arbi_agent_executor
-from arbi_agent.ltm.data_source import DataSource
 from arbi_agent.model import generalized_list_factory
 from arbi_agent.configuration import BrokerType
+from utils import msg_parser, retrieve_all_vertex, NCDataSource
 
 broker_host = os.getenv("BROKER_ADDRESS")
 if broker_host is None:
@@ -24,26 +24,6 @@ if broker_port is None:
 
 broker_type = BrokerType.ACTIVE_MQ
 
-def msg_parser(msg, c):
-    return [msg.get_expression(i).as_value().string_value() for i in c]
-
-
-def ds_msg_parser(msg, c):
-    msg = generalized_list_factory.new_gl_from_gl_string(msg)
-    return [msg.get_expression(i).as_value().string_value() for i in c]
-
-
-def retrieve_all_vertex():
-    with open(pathlib.Path(__file__).parent.resolve() / "map_cloud.txt", "r") as map_info:
-        result = {}
-        info_str = map_info.read()
-        for line in info_str.split('\n'):
-            target = line.split(' ')
-            if target[0] == '\tname':
-                result[target[1]] = []
-    print(str(result))
-    return result
-
 
 def remove_overlap(d):
     for k, v in d.items():
@@ -53,47 +33,16 @@ def remove_overlap(d):
                     v.pop(i)
 
 
-class NCDataSource(DataSource):
-    def __init__(self, nc):
-        self.nc = nc
-        super().__init__()
-
-    def on_notify(self, notification):
-        print("[ON NOTIFY] : " + str(notification))
-        robot_id, v1, v2 = ds_msg_parser(notification, [0, 1, 2])
-        if self.nc.robot_position[robot_id]:
-            if (v1, v2) != self.nc.robot_position[robot_id]:
-                prev_v12 = self.nc.robot_position[robot_id]
-                if v1 != self.nc.robot_position[robot_id][0]:
-                    if self.nc.robot_state[robot_id] in ['entering', 'exiting', 'entered', 'exited']:
-                        if self.nc.node_queue[prev_v12[0]] and self.nc.node_queue[prev_v12[0]][0] == robot_id:
-                            self.nc.node_queue[prev_v12[0]].pop(0)
-                            self.nc.robot_position[robot_id] = (v1, v2)
-                    else:
-                        if self.nc.node_queue[prev_v12[0]] and self.nc.node_queue[prev_v12[0]][0] == robot_id:
-                            if self.nc.multipath[robot_id] and self.nc.multipath[robot_id][0] == prev_v12[0]:
-                                if self.nc.multipath[robot_id][1] == v1:
-                                    self.nc.node_queue[prev_v12[0]].pop(0)
-                                    self.nc.multipath[robot_id].pop(0)
-                                    self.nc.robot_position[robot_id] = (v1, v2)
-                                    if len(self.nc.multipath[robot_id]) == 1:
-                                        self.nc.multipath[robot_id] = []
-                                    if self.nc.path_block_cnt[robot_id]:
-                                        self.nc.path_block_cnt[robot_id][0] += 1
-                else:
-                    self.nc.robot_position[robot_id] = (v1, v2)
-                print(f'{robot_id} position has been changed : {prev_v12} -> {(v1, v2)}')
-        else:
-            self.nc.robot_position[robot_id] = (v1, v2)
-
-
 class NavigationController(ArbiAgent):
     def __init__(self, host, port):
         super().__init__()
         arbi_agent_executor.execute(broker_host=host, broker_port=port,
                                     agent_name="agent://www.arbi.com/NavigationController",
                                     agent=self, broker_type=broker_type, daemon=False)
-
+        now = datetime.datetime.now()
+        self.logging_time = f'{now.month}_{now.day}_{now.hour}_{now.minute}_{now.second}'
+        with open(f'{self.logging_time}.txt', 'x') as f:
+            f.write('Start')
         self.request_queue = []
         self.node_queue = retrieve_all_vertex()
         self.robot_id_list = ['AMR_LIFT1', 'AMR_LIFT2', 'AMR_LIFT3', 'AMR_LIFT4']
@@ -197,14 +146,8 @@ class NavigationController(ArbiAgent):
             if self.robot_state[robot_id] not in ['returned', 'canceled', 'entered', 'exited', 'waiting_for_moving']:
                 break
         else:
-            #print('waiting for replanning', 5)
-            #time.sleep(1)
-            #print('waiting for replanning', 4)
-            #time.sleep(1)
-            #print('waiting for replanning', 3)
-            #time.sleep(1)
-            #print('waiting for replanning', 2)
-            #time.sleep(1)
+            # print('waiting for replanning', 2)
+            # time.sleep(1)
             print('waiting for replanning', 1)
             time.sleep(1)
             print('Replanning started')
@@ -275,8 +218,11 @@ class NavigationController(ArbiAgent):
         return str(temp_gl.get_expression(1))[:-1].split(' ')[1:]
 
     def on_data(self, sender: str, data: str):
-
         print(f'ON DATA\nsender : {sender}\non data : {data}\n')
+        with open(f'{self.logging_time}.txt', 'a') as f:
+            f.write(f'{sender}\n')
+            f.write(f'{data}\n')
+
         action_id = generalized_list_factory.new_gl_from_gl_string(data).get_expression(0).as_value().string_value()
         robot_id = action_id.split('+')[0]
         if self.robot_state[robot_id] in ['moving_for_entering', 'moving_for_return', 'entering', 'exiting']:
