@@ -106,7 +106,7 @@ class NavigationController(ArbiAgent):
                     self.send_enter_exit_msg(nav_msg)
                     self.action_id[robot_id] = action_id
                     self.node_queue[end_vertex] = [robot_id]
-            else:
+            elif nav_msg.get_name() in ['RequestNavigate', 'RequestReturn']:
                 single_path = self.request_single_path(start_vertex, end_vertex)
                 single_path_flag = True
                 for n in single_path[1:]:
