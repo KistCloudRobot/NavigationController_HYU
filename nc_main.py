@@ -246,9 +246,10 @@ class NavigationController(ArbiAgent):
     def send_navigate_msg(self, robot_id, path):
         if self.robot_canceled[robot_id]:
             self.robot_canceled[robot_id] = False
-            ver_2 = self.robot_position[robot_id][1]
-            if path[1] == ver_2:
-                path = path[1:]
+            # ver_2 = self.robot_position[robot_id][1]
+            # if path[1] == ver_2:
+            #     path = path[1:]
+        
         path_temp = ' '.join(path)
         move_msg = f'(RequestMove"{robot_id}+Move""{robot_id}"(Path {path_temp}))'
         print(f'NAVIGATE robot_id : {robot_id}, state : {self.robot_state[robot_id]}, block_path : {path_temp}')
