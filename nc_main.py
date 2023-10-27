@@ -192,7 +192,14 @@ class NavigationController(ArbiAgent):
         for idx, r in enumerate(self.robot_id_list):
             temp_gl = response_gl.get_expression(idx).as_generalized_list()
             path = str(temp_gl.get_expression(1))[:-1].split(' ')[1:]
-            self.multipath[r] = path if len(path) > 1 else []
+            if len(path) > 1:
+                goal = path[-1]
+                if goal in path[:-1]:
+                    g_idx = path[:-1].index(goal)
+                    path = path[:g_idx+1]
+                self.multipath[r] = path
+            else:
+                self.multipath[r] = []
 
         for k in self.node_queue.keys():
             self.node_queue[k] = []
