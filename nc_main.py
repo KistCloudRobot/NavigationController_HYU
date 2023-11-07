@@ -194,7 +194,7 @@ class NavigationController(ArbiAgent):
             path = str(temp_gl.get_expression(1))[:-1].split(' ')[1:]
             if len(path) > 1:
                 goal = path[-1]
-                if self.robot_nr_type[idx] == 'RequestNavigate':
+                if self.robot_nr_type[r] == 'RequestNavigate':
                     if goal in path[:-1]:
                         g_idx = path[:-1].index(goal)
                         path = path[:g_idx+1]
