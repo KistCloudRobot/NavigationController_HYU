@@ -48,7 +48,7 @@ class NavigationController(ArbiAgent):
         self.robot_id_list = ['AMR_LIFT1', 'AMR_LIFT2', 'AMR_LIFT3', 'AMR_LIFT4']
         self.multipath = {r: [] for r in self.robot_id_list}
         self.robot_state = {r: 'returned' for r in self.robot_id_list}
-        self.robot_nr_type = {r: None for r in self.robot_id_list}
+        self.robot_nr_type = {r: None for r in self.robot_id_list} # Navigate, Return
         self.robot_canceled = {r: False for r in self.robot_id_list}
         self.action_id = {r: str() for r in self.robot_id_list}
         self.robot_position = {r: tuple() for r in self.robot_id_list}
@@ -194,9 +194,10 @@ class NavigationController(ArbiAgent):
             path = str(temp_gl.get_expression(1))[:-1].split(' ')[1:]
             if len(path) > 1:
                 goal = path[-1]
-                if goal in path[:-1]:
-                    g_idx = path[:-1].index(goal)
-                    path = path[:g_idx+1]
+                if self.robot_nr_type[idx] == 'RequestNavigate':
+                    if goal in path[:-1]:
+                        g_idx = path[:-1].index(goal)
+                        path = path[:g_idx+1]
                 self.multipath[r] = path
             else:
                 self.multipath[r] = []
