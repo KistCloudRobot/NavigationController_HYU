@@ -10,7 +10,7 @@ from arbi_agent.agent.arbi_agent import ArbiAgent
 from arbi_agent.agent import arbi_agent_executor
 from arbi_agent.model import generalized_list_factory
 from arbi_agent.configuration import BrokerType
-from utils import msg_parser, retrieve_all_vertex, NCDataSource
+from nc_utils import msg_parser, retrieve_all_vertex, NCDataSource
 
 broker_host = os.getenv("BROKER_ADDRESS")
 if broker_host is None:
