@@ -125,6 +125,7 @@ class NavigationController(ArbiAgent):
                     self.send_navigate_msg(robot_id, single_path)
                 else:
                     self.cancel_switch = True
+                    time.sleep(3)
                     for robot_id in self.robot_id_list:
                         cancel_msg = f'(RequestCancelMove"{robot_id}+Cancel""{robot_id}")'
                         print(cancel_msg)
